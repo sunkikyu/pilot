@@ -1,11 +1,12 @@
+from pytz import timezone
 import streamlit as st
 import json
 from datetime import datetime, timedelta
+import pytz
 
 st.set_page_config(page_title="버스 실시간 안내", layout="centered")
 st.markdown("## 🚌 실시간 버스 기점 출발 안내")
 
-# 🚩 버스 스케줄 JSON 로드
 @st.cache_data
 def load_schedule(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -13,7 +14,6 @@ def load_schedule(path):
 
 bus_data = load_schedule("downloads/bus_schedule.json")
 
-# 🚩 사용자 지정 정렬 로직
 def custom_sort_key(route):
     if route.startswith("M"):
         return (0, route)
@@ -24,11 +24,10 @@ def custom_sort_key(route):
     else:
         return (3, route)
 
-# 🚩 노선 선택 UI
 routes = sorted(bus_data.keys(), key=custom_sort_key)
 selected_route = st.selectbox("노선을 선택하세요:", routes)
 
-# 🚩 JS로 모바일 키보드 자동 최소화
+# 모바일 키보드 최소화
 st.components.v1.html("""
 <script>
 const dropdown = window.parent.document.querySelector('select');
@@ -40,16 +39,21 @@ if (dropdown) {
 </script>
 """, height=0)
 
-# 🚩 시간 필터링 및 출력
 if selected_route:
     times = bus_data[selected_route]
-    now = datetime.now().replace(microsecond=0)
+
+    # 한국 시간 기준으로 now 설정
+    tz_kst = timezone("Asia/Seoul")
+    now = datetime.now(tz_kst).replace(microsecond=0)
+    st.caption(f"📍 현재 시간: {now.strftime('%H:%M:%S')}")
 
     result = []
     for time_str in times:
         try:
+            time_str = time_str.strip()  # ← 공백 제거
             bus_time = datetime.strptime(time_str, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day
+                year=now.year, month=now.month, day=now.day,
+                tzinfo=tz_kst  # ← 반드시 KST로 맞추기
             )
             if bus_time >= now:
                 diff = bus_time - now
