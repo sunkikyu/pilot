@@ -42,18 +42,28 @@ if selected_route:
             bus_time = datetime.strptime(time_str, "%H:%M").replace(
                 year=now.year, month=now.month, day=now.day
             )
-            if bus_time >= now:  # ▶︎ 현재 이후의 시간만 포함
-                diff = bus_time - now
-                result.append((time_str, diff))
+            if bus_time < now:
+                bus_time += timedelta(days=1)  # 이미 지난 시간은 다음날로
+            diff = bus_time - now
+            result.append((time_str, diff))
         except Exception as e:
             st.error(f"시간 파싱 오류: {time_str} | {e}")
 
-    # 🚩 남은 시간 기준 정렬
+    # 🚩 남은 시간 기준 정렬 후 상위 3개만
     result.sort(key=lambda x: x[1])
+    result = result[:3]
 
     # 🚩 시각별 출력
     for time_str, diff in result:
         total_seconds = int(diff.total_seconds())
-        minutes, seconds = divmod(total_seconds, 60)
-        icon = "⏳" if minutes > 10 else "⏰"
-        st.markdown(f"- 🕒 **{time_str}** → {icon} **{minutes}분 {seconds}초 남음**")
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        icon = "⏳" if (hours * 60 + minutes) > 10 else "⏰"
+
+        if hours >= 1:
+            display_time = f"{hours}시간 {minutes}분 {seconds}초 남음"
+        else:
+            display_time = f"{minutes}분 {seconds}초 남음"
+
+        st.markdown(f"- 🕒 **{time_str}** → {icon} **{display_time}**")
