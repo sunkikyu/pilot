@@ -3,10 +3,11 @@ import json
 from datetime import datetime, timedelta
 from pytz import timezone
 
+# 대한민국 표준시 타임존
 tz_kst = timezone("Asia/Seoul")
-now = datetime.now(tz_kst).replace(microsecond=0)
 
 st.set_page_config(page_title="버스 실시간 안내", layout="centered")
+
 st.markdown("## 🚌 실시간 버스 기점 출발 안내")
 
 @st.cache_data
@@ -16,6 +17,7 @@ def load_schedule(path):
 
 bus_data = load_schedule("downloads/bus_schedule.json")
 
+# 커스텀 정렬 로직
 def custom_sort_key(route):
     if route.startswith("M"):
         return (0, route)
@@ -29,20 +31,20 @@ def custom_sort_key(route):
 routes = sorted(bus_data.keys(), key=custom_sort_key)
 selected_route = st.selectbox("노선을 선택하세요:", routes)
 
+now = datetime.now(tz_kst).replace(microsecond=0)
 st.markdown(f"🔑 현재 시간: <span style='color:green;'>{now.strftime('%H:%M:%S')}</span>", unsafe_allow_html=True)
 
 if selected_route:
     result = []
+    today = now.date()
 
     for time_str in bus_data[selected_route]:
         try:
-            # 문자열 → 시간 (naive)
-            bus_time_naive = datetime.strptime(time_str.strip(), "%H:%M").time()
-            # 오늘 날짜 기준 datetime 객체 생성
-            bus_datetime = datetime.combine(now.date(), bus_time_naive)
+            bus_time = datetime.strptime(time_str.strip(), "%H:%M").time()
+            bus_datetime = datetime.combine(today, bus_time)
             bus_datetime = tz_kst.localize(bus_datetime)
 
-            # 이미 지난 버스는 제외
+            # ✅ 현재 시각보다 이전이면 continue
             if bus_datetime <= now:
                 continue
 
@@ -51,6 +53,7 @@ if selected_route:
         except Exception as e:
             st.error(f"시간 파싱 오류: {time_str} | {e}")
 
+    # 가장 가까운 3개만 표시
     result.sort(key=lambda x: x[1])
     result = result[:3]
 
