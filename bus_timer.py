@@ -5,7 +5,6 @@ from pathlib import Path
 import pytz
 
 st.set_page_config(page_title="버스 실시간 안내", layout="centered")
-
 tz_kst = pytz.timezone("Asia/Seoul")
 
 st.markdown("## 🚌 실시간 버스 기점 출발 안내")
@@ -39,13 +38,12 @@ if selected_route:
 
     for time_str in times:
         try:
-            time_str = time_str.strip()
-            # 시간 파싱 + KST 지역화
-            bus_time = tz_kst.localize(datetime.strptime(time_str, "%H:%M")).replace(
-                year=now.year, month=now.month, day=now.day
-            )
+            # 현재 날짜와 조합해 datetime 생성 후, KST 적용
+            time_obj = datetime.strptime(time_str.strip(), "%H:%M").time()
+            bus_time = tz_kst.localize(datetime.combine(now.date(), time_obj))
+
             if bus_time <= now:
-                continue  # 이미 지난 시간은 제외
+                continue
 
             diff = bus_time - now
             result.append((time_str, diff))
@@ -57,9 +55,9 @@ if selected_route:
 
     st.markdown(f"### 🕰️ **{selected_route}번 버스 남은 시간**")
     for time_str, diff in result:
-        total_seconds = diff.total_seconds()
-        minutes = int(total_seconds // 60)
-        seconds = int(total_seconds % 60)
+        total_seconds = int(diff.total_seconds())
+        minutes = total_seconds // 60
+        seconds = total_seconds % 60
 
         if minutes >= 60:
             hours = minutes // 60
@@ -68,5 +66,5 @@ if selected_route:
         else:
             formatted = f"{minutes}분 {seconds}초 남음"
 
-        icon = "⏳" if diff.total_seconds() > 600 else "⏰"
+        icon = "⏳" if total_seconds > 600 else "⏰"
         st.markdown(f"- 🕒 **{time_str}** → {icon} **{formatted}**")
