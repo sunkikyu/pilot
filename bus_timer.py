@@ -2,16 +2,15 @@ import streamlit as st
 import json
 from datetime import datetime, timedelta
 from pytz import timezone
-from pathlib import Path
 
-# 📌 페이지 설정 (가장 먼저 호출)
+# ✅ 페이지 설정 (제일 먼저)
 st.set_page_config(page_title="버스 실시간 안내", layout="centered")
 
-# ⏰ 한국 시간대 설정
+# ✅ 한국 시간대 기준 현재 시각
 tz_kst = timezone("Asia/Seoul")
 now = datetime.now(tz_kst).replace(microsecond=0)
 
-# 🚩 JSON 로드 (캐시 사용)
+# ✅ 버스 JSON 파일 로드
 @st.cache_data
 def load_schedule(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -19,7 +18,7 @@ def load_schedule(path):
 
 bus_data = load_schedule("downloads/bus_schedule.json")
 
-# 🧭 사용자 정의 정렬 함수
+# ✅ 노선 사용자 지정 정렬
 def custom_sort_key(route):
     if route.startswith("M"):
         return (0, route)
@@ -30,53 +29,46 @@ def custom_sort_key(route):
     else:
         return (3, route)
 
-# 🔽 노선 선택
+# ✅ 노선 선택
 routes = sorted(bus_data.keys(), key=custom_sort_key)
 selected_route = st.selectbox("노선을 선택하세요:", routes)
 
-# 🕐 현재 시각 표시
-st.markdown(f"🔑 현재 시간: <span style='color:green;'>{now.strftime('%H:%M:%S')}</span>", unsafe_allow_html=True)
+# ✅ 현재 시간 출력
+st.markdown(f"🕓 현재 시간: <span style='color:green;'>{now.strftime('%H:%M:%S')}</span>", unsafe_allow_html=True)
 
-# 🚍 선택된 노선 처리
+# ✅ 선택된 노선 처리
 if selected_route:
-    times = bus_data[selected_route]
     result = []
-
-    for time_str in times:
+    for time_str in bus_data[selected_route]:
         try:
-            # 시간 문자열 → datetime 객체로 변환 (오늘 날짜 기준)
-            time_obj = datetime.strptime(time_str.strip(), "%H:%M").time()
-            bus_time = tz_kst.localize(datetime.combine(now.date(), time_obj))
-
-            # 이미 지난 버스는 무시
+            bus_time = datetime.strptime(time_str.strip(), "%H:%M").replace(
+                year=now.year, month=now.month, day=now.day, tzinfo=tz_kst
+            )
+            if bus_time < now:
+                continue  # ❌ 이미 지난 버스는 표시 안 함
             diff = bus_time - now
-            if diff.total_seconds() < 0:
-                continue
-
             result.append((time_str, diff))
         except Exception as e:
             st.error(f"시간 파싱 오류: {time_str} | {e}")
 
-    # 남은 시간 기준 정렬 & 상위 3개만 표시
+    # ✅ 가까운 순 정렬 후 3개만 표시
     result.sort(key=lambda x: x[1])
     result = result[:3]
 
-    # 결과 출력
-    st.markdown(f"🕰️ **{selected_route}번 버스 남은 시간**")
-
+    # ✅ 결과 출력
+    st.markdown(f"🚌 **{selected_route}번 버스 남은 시간**")
     for time_str, diff in result:
         total_seconds = int(diff.total_seconds())
         minutes = total_seconds // 60
         seconds = total_seconds % 60
 
-        # 60분 이상일 경우: 시간 단위로 표시
         if minutes >= 60:
             hours = minutes // 60
             mins = minutes % 60
             icon = "⏳"
-            remaining = f"{hours}시간 {mins}분 {seconds}초 남음"
+            display = f"{hours}시간 {mins}분 {seconds}초 남음"
         else:
             icon = "⏰" if minutes <= 10 else "⏳"
-            remaining = f"{minutes}분 {seconds}초 남음"
+            display = f"{minutes}분 {seconds}초 남음"
 
-        st.markdown(f"- 🕒 **{time_str}** → {icon} **{remaining}**")
+        st.markdown(f"- 🕒 **{time_str}** → {icon} **{display}**")
