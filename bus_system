@@ -1,0 +1,57 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+import time
+import os
+import urllib.request
+
+# 1. 다운로드 폴더 지정
+download_dir = os.path.join(os.getcwd(), "downloads")
+os.makedirs(download_dir, exist_ok=True)
+
+options = webdriver.ChromeOptions()
+prefs = {
+    "download.default_directory": download_dir,
+    "download.prompt_for_download": False,
+    "profile.default_content_settings.popups": 0
+}
+options.add_experimental_option("prefs", prefs)
+
+driver = webdriver.Chrome(options=options)
+
+# 2. 다음 카페 게시판으로 이동 (로그인 불필요)
+driver.get("https://m.cafe.daum.net/kd4266/FJlw")
+time.sleep(3)
+
+# 3. 게시글 링크 수집 (예: 처음 10개만)
+post_links = []
+posts = driver.find_elements(By.CSS_SELECTOR, "ul.list_view li.list_item a")
+for post in posts[:10]:  # 수집 범위 조절 가능
+    link = post.get_attribute("href")
+    if link:
+        post_links.append(link)
+
+# 4. 게시글 하나씩 방문
+for link in post_links:
+    driver.get(link)
+    time.sleep(2)
+
+    try:
+        # 게시글 제목
+        title_elem = driver.find_element(By.CLASS_NAME, "tit_subject")
+        title = title_elem.text.strip().replace("/", "_").replace(":", "-")
+
+        # 첨부파일 (엑셀)
+        attach_links = driver.find_elements(By.CSS_SELECTOR, "a[href*='fileDownload']")
+        for i, a in enumerate(attach_links):
+            file_url = a.get_attribute("href")
+            if file_url.endswith(".xlsx") or file_url.endswith(".xls"):
+                filename = f"{title}_{i+1}.xlsx"
+                filepath = os.path.join(download_dir, filename)
+                urllib.request.urlretrieve(file_url, filepath)
+                print(f"✅ 다운로드 완료: {filename}")
+
+    except Exception as e:
+        print(f"⚠️ 오류: {e}")
+        continue
+
+driver.quit()

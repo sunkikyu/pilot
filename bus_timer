@@ -1,0 +1,42 @@
+import streamlit as st
+from datetime import datetime, timedelta
+import time
+
+# 🚌 노선별 시간표 (24시간제 문자열 리스트)
+bus_timetable = {
+    "M4448": ["06:35", "06:45", "06:50", "07:00", "07:10", "07:20", "07:30", "17:10", "17:20", "17:30", "18:00", "18:10", "18:50"],
+    "6002-1": ["06:50", "07:10", "07:30", "08:00", "17:30", "18:00", "18:40"],
+}
+
+# 🚀 Streamlit UI
+st.title("버스 기점 실시간 카운트다운")
+selected_route = st.selectbox("노선 선택", list(bus_timetable.keys()))
+
+placeholder = st.empty()
+
+def get_next_time(timetable, now):
+    now_time = now.time()
+    for t_str in timetable:
+        t = datetime.strptime(t_str, "%H:%M").time()
+        if t > now_time:
+            return t
+    return None  # 오늘 다 끝났으면 None
+
+while True:
+    now = datetime.now()
+    timetable = bus_timetable[selected_route]
+    next_time = get_next_time(timetable, now)
+
+    if next_time:
+        next_datetime = datetime.combine(now.date(), next_time)
+        diff = next_datetime - now
+        mins, secs = divmod(int(diff.total_seconds()), 60)
+        time_str = f"{mins}분 {secs}초 남음"
+    else:
+        time_str = "오늘 운행 종료"
+
+    placeholder.markdown(f"### 현재 시각: {now.strftime('%H:%M:%S')}")
+    placeholder.markdown(f"### 다음 버스: {next_time.strftime('%H:%M') if next_time else '없음'}")
+    placeholder.markdown(f"### 남은 시간: {time_str}")
+
+    time.sleep(1)
