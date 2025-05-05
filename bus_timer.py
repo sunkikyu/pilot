@@ -42,10 +42,9 @@ if selected_route:
             bus_time = datetime.strptime(time_str, "%H:%M").replace(
                 year=now.year, month=now.month, day=now.day
             )
-            if bus_time < now:
-                bus_time += timedelta(days=1)  # 이미 지난 시간은 다음날로
-            diff = bus_time - now
-            result.append((time_str, diff))
+            if bus_time >= now:  # ▶︎ 현재 이후의 시간만 포함
+                diff = bus_time - now
+                result.append((time_str, diff))
         except Exception as e:
             st.error(f"시간 파싱 오류: {time_str} | {e}")
 
@@ -54,7 +53,7 @@ if selected_route:
 
     # 🚩 시각별 출력
     for time_str, diff in result:
-        minutes = diff.seconds // 60
-        seconds = diff.seconds % 60
+        total_seconds = int(diff.total_seconds())
+        minutes, seconds = divmod(total_seconds, 60)
         icon = "⏳" if minutes > 10 else "⏰"
         st.markdown(f"- 🕒 **{time_str}** → {icon} **{minutes}분 {seconds}초 남음**")
