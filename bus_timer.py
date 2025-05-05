@@ -1,9 +1,13 @@
 import streamlit as st
 import json
 from datetime import datetime, timedelta
+import pytz  # ← 추가
 
 st.set_page_config(page_title="버스 실시간 안내", layout="centered")
 st.markdown("## 🚌 실시간 버스 기점 출발 안내")
+
+# ⏰ 서울 시간대 설정
+seoul = pytz.timezone("Asia/Seoul")
 
 # 🚩 버스 스케줄 JSON 파일 로드
 @st.cache_data
@@ -31,14 +35,15 @@ selected_route = st.selectbox("노선을 선택하세요", routes)
 # 🚩 시간 계산 및 표시
 if selected_route:
     st.markdown(f"### 🕒 **{selected_route}번 버스 남은 시간**")
-    now = datetime.now().replace(microsecond=0)
-    result = []
+    now = datetime.now(seoul).replace(microsecond=0)  # ← 한국 시간 기준
 
+    result = []
     for time_str in bus_data[selected_route]:
         try:
             bus_time = datetime.strptime(time_str, "%H:%M").replace(
                 year=now.year, month=now.month, day=now.day
             )
+            bus_time = seoul.localize(bus_time)
 
             # 이미 지난 시간 또는 지금 시각은 제외
             if bus_time <= now:
