@@ -1,4 +1,6 @@
 import streamlit as st
+st.set_page_config(page_title="버스 실시간 안내", layout="centered")
+
 import json
 from datetime import datetime, timedelta
 import pytz
@@ -24,9 +26,7 @@ else:
     day_type = "weekday"
     label = "평일"
 
-# 🧾 페이지 설정
-st.set_page_config(page_title="버스 실시간 안내", layout="centered")
-
+# 🧾 제목 및 요일 정보
 st.markdown("## 🚌 실시간 버스 기점 출발 안내")
 st.markdown(f"🗓️ 오늘은 **{label}**입니다")
 
@@ -69,7 +69,7 @@ if selected_route:
                 year=now.year, month=now.month, day=now.day, tzinfo=KST
             )
             if bus_time < now:
-                continue  # 지난 시간은 제외
+                continue  # 지난 시간 제외
             diff = bus_time - now
             result.append((time_str, diff))
         except Exception as e:
@@ -77,16 +77,17 @@ if selected_route:
 
     result.sort(key=lambda x: x[1])
 
-    # 🔔 최대 3개까지만 출력
     for time_str, diff in result[:3]:
-        minutes = diff.seconds // 60
-        seconds = diff.seconds % 60
-        if diff.seconds >= 3600:
-            hours = diff.seconds // 3600
-            minutes = (diff.seconds % 3600) // 60
-            formatted = f"{hours}시간 {minutes}분 {seconds}초 남음"
-        else:
-            formatted = f"{minutes}분 {seconds}초 남음"
+        seconds = diff.seconds
+        minutes = seconds // 60
+        secs = seconds % 60
 
-        icon = "⏰" if diff.seconds <= 600 else "⏳"
-        st.markdown(f"- 🕒 **{time_str}** → {icon} **{formatted}**")
+        if seconds >= 3600:
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            display = f"{hours}시간 {minutes}분 {secs}초 남음"
+        else:
+            display = f"{minutes}분 {secs}초 남음"
+
+        icon = "⏰" if seconds <= 600 else "⏳"
+        st.markdown(f"- 🕒 **{time_str}** → {icon} **{display}**")
