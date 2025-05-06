@@ -1,37 +1,45 @@
-import json
-import time
-from datetime import datetime, timedelta
 import streamlit as st
+import json
+from datetime import datetime, timedelta
+import pytz
+from korean_holidays import is_korean_holiday
+import time
 
-# ✅ 꼭 맨 위에 있어야 함
-st.set_page_config(page_title="🚌 동탄2 버스 실시간 안내", layout="centered")
+# ✅ 페이지 설정 (최상단에서 실행)
+st.set_page_config(page_title="실시간 버스 기점 출발 안내", layout="centered")
 
-# ✅ 강제로 UTC 기준 + 9시간 = 한국시간
-def get_now_kst():
-    return datetime.utcnow() + timedelta(hours=9)
+# ✅ 현재 시각 (KST)
+kst = pytz.timezone("Asia/Seoul")
+now = datetime.now(kst)
 
-# ✅ 공휴일 정의
-HOLIDAYS = {
-    "2025-01-01", "2025-03-01", "2025-05-05", "2025-05-06",
-    "2025-06-06", "2025-08-15", "2025-10-03", "2025-10-09", "2025-12-25"
-}
+# ✅ 요일 판단 및 공휴일 확인
+weekday = now.weekday()  # 0: 월요일 ~ 6: 일요일
+today = now.date()
 
-def get_day_type(now):
-    today_str = now.strftime("%Y-%m-%d")
-    weekday = now.weekday()
-    if today_str in HOLIDAYS or weekday == 6:
-        return "holiday.json", "📅 일요일/공휴일"
-    elif weekday == 5:
-        return "saturday.json", "📅 토요일"
-    else:
-        return "weekday.json", "📅 평일"
+if is_korean_holiday(today) or weekday == 6:
+    mode = "holiday"
+    label = "📅 오늘은 일요일/공휴일입니다"
+elif weekday == 5:
+    mode = "saturday"
+    label = "📅 오늘은 토요일입니다"
+else:
+    mode = "weekday"
+    label = "📅 오늘은 평일입니다"
 
+st.title("🚌 실시간 버스 기점 출발 안내")
+st.markdown(f"### {label}")
+st.markdown(f"#### 👨‍💻 현재 시각: <span style='color:green'>{now.strftime('%H:%M:%S')}</span>", unsafe_allow_html=True)
+
+# ✅ JSON 로드 함수
 @st.cache_data
 def load_schedule(path):
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
-def custom_sort_key(route):
+bus_data = load_schedule(f"downloads/{mode}.json")
+
+# ✅ 사용자 지정 정렬
+def sort_key(route):
     if route.startswith("M"):
         return (0, route)
     elif route.startswith("G"):
@@ -41,46 +49,49 @@ def custom_sort_key(route):
     else:
         return (3, route)
 
-# ✅ 시작
-placeholder = st.empty()
+# ✅ 노선 선택
+routes = sorted(bus_data.keys(), key=sort_key)
+selected = st.selectbox("🚌 " + label + " 노선을 선택하세요:", routes)
 
-now = get_now_kst()
-schedule_file, day_type = get_day_type(now)
-bus_data = load_schedule(f"downloads/{schedule_file}")
-routes = sorted(bus_data.keys(), key=custom_sort_key)
-selected_route = st.selectbox(f"🚌 {day_type} 노선을 선택하세요:", routes)
+# ✅ 실시간 남은 시간 계산 및 출력
+if selected:
+    now = datetime.now(kst).replace(microsecond=0)
+    times = bus_data[selected]
+    future_times = []
 
-# ✅ 틱톡 갱신
-while True:
-    now = get_now_kst()
-    result_md = f"### ⏱️ 현재 시각: {now.strftime('%H:%M:%S')}\n\n"
+    for t in times:
+        try:
+            h, m = map(int, t.strip().split(":"))
+            bus_time = now.replace(hour=h, minute=m, second=0)
 
-    if selected_route:
-        times = bus_data[selected_route]
-        result = []
-        for time_str in times:
-            try:
-                bus_time = datetime.strptime(time_str, "%H:%M").replace(
-                    year=now.year, month=now.month, day=now.day
-                )
-                if bus_time < now:
-                    bus_time += timedelta(days=1)
-                diff = bus_time - now
-                result.append((time_str, diff))
-            except Exception as e:
-                st.error(f"시간 파싱 오류: {time_str} → {e}")
+            if bus_time < now:
+                continue  # 지나간 시간은 제외
 
-        result = sorted(result, key=lambda x: x[1])[:3]
-        for time_str, diff in result:
-            total_sec = int(diff.total_seconds())
-            minutes, seconds = divmod(total_sec, 60)
-            if total_sec >= 3600:
-                hours, minutes = divmod(minutes, 60)
-                remain_str = f"{hours}시간 {minutes}분 {seconds}초 남음"
-            else:
-                remain_str = f"{minutes}분 {seconds}초 남음"
-            icon = "⏰" if total_sec <= 600 else "⏳"
-            result_md += f"- 🕒 **{time_str}** → {icon} **{remain_str}**\n"
+            diff = bus_time - now
+            future_times.append((t, diff))
 
-    placeholder.markdown(result_md)
+        except Exception as e:
+            continue
+
+    future_times = sorted(future_times, key=lambda x: x[1])[:3]
+
+    st.markdown(f"### 🕰️ {selected}번 버스 남은 시간")
+    for time_str, diff in future_times:
+        total_sec = int(diff.total_seconds())
+        hours = total_sec // 3600
+        minutes = (total_sec % 3600) // 60
+        seconds = total_sec % 60
+
+        if total_sec <= 600:
+            icon = "⏰"
+        else:
+            icon = "⏳"
+
+        if hours >= 1:
+            st.markdown(f"- 🕒 {time_str} → {icon} **{hours}시간 {minutes}분 {seconds}초 남음**")
+        else:
+            st.markdown(f"- 🕒 {time_str} → {icon} **{minutes}분 {seconds}초 남음**")
+
+    # ✅ 틱톡식 실시간 업데이트
     time.sleep(1)
+    st.experimental_rerun()
