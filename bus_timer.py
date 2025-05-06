@@ -1,23 +1,20 @@
 import json
-import pytz
 import time
 from datetime import datetime, timedelta
 import streamlit as st
 
-# ✅ 반드시 최상단에 있어야 함
+# ✅ 꼭 맨 위에 있어야 함
 st.set_page_config(page_title="🚌 동탄2 버스 실시간 안내", layout="centered")
 
-KST = pytz.timezone("Asia/Seoul")
+# ✅ 강제로 UTC 기준 + 9시간 = 한국시간
+def get_now_kst():
+    return datetime.utcnow() + timedelta(hours=9)
 
-# ✅ JSON 파일 경로
+# ✅ 공휴일 정의
 HOLIDAYS = {
     "2025-01-01", "2025-03-01", "2025-05-05", "2025-05-06",
     "2025-06-06", "2025-08-15", "2025-10-03", "2025-10-09", "2025-12-25"
 }
-
-# ✅ 실시간 처리
-def get_now_kst():
-    return datetime.now(KST)
 
 def get_day_type(now):
     today_str = now.strftime("%Y-%m-%d")
@@ -29,13 +26,11 @@ def get_day_type(now):
     else:
         return "weekday.json", "📅 평일"
 
-# ✅ 캐시된 JSON 불러오기
 @st.cache_data
 def load_schedule(path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# ✅ 노선 정렬 기준
 def custom_sort_key(route):
     if route.startswith("M"):
         return (0, route)
@@ -46,26 +41,27 @@ def custom_sort_key(route):
     else:
         return (3, route)
 
-# ✅ 실시간 틱톡 박스
+# ✅ 시작
 placeholder = st.empty()
 
-# ✅ 사용자 인터페이스
-schedule_file, day_type = get_day_type(get_now_kst())
+now = get_now_kst()
+schedule_file, day_type = get_day_type(now)
 bus_data = load_schedule(f"downloads/{schedule_file}")
 routes = sorted(bus_data.keys(), key=custom_sort_key)
 selected_route = st.selectbox(f"🚌 {day_type} 노선을 선택하세요:", routes)
 
-# ✅ 실시간 갱신 루프
+# ✅ 틱톡 갱신
 while True:
     now = get_now_kst()
     result_md = f"### ⏱️ 현재 시각: {now.strftime('%H:%M:%S')}\n\n"
+
     if selected_route:
         times = bus_data[selected_route]
         result = []
         for time_str in times:
             try:
                 bus_time = datetime.strptime(time_str, "%H:%M").replace(
-                    year=now.year, month=now.month, day=now.day, tzinfo=KST
+                    year=now.year, month=now.month, day=now.day
                 )
                 if bus_time < now:
                     bus_time += timedelta(days=1)
