@@ -31,8 +31,10 @@ def load_schedule(file_path):
     with open(file_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
-# ✅ Streamlit 설정은 맨 처음에 위치해야 함
-st.set_page_config(page_title="버스 실시간 안내", layout="centered")
+st.set_page_config(
+    page_title="동탄2 버스 실시간 안내",
+    layout="centered"
+)
 
 # ✅ 오늘 날짜 기준 정보
 file_path, today_label = get_schedule_file()
