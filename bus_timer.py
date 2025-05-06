@@ -1,96 +1,99 @@
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
-from datetime import datetime, timedelta
 import json
+from datetime import datetime, timedelta, date
+import time
+import platform
 import holidays
-import pytz
 
-# ✅ 페이지 설정 (맨 첫 줄에서 설정)
+# ✅ 페이지 설정 (최상단에 위치해야 함)
 st.set_page_config(page_title="버스 실시간 안내", layout="centered")
 
-# ✅ 한국 시간대
-KST = pytz.timezone("Asia/Seoul")
-now = datetime.now(KST)
+# ✅ 한글 공휴일 설정
+kr_holidays = holidays.KR()
 
-# ✅ 자동 새로고침 (60초 간격)
-st_autorefresh(interval=60 * 1000, key="refresh")
+def get_today_type():
+    today = date.today()
+    if today in kr_holidays or today.weekday() == 6:
+        return "holiday"
+    elif today.weekday() == 5:
+        return "saturday"
+    else:
+        return "weekday"
 
-# ✅ 오늘이 평일 / 토요일 / 일요일 or 공휴일 인지 판별
-ko_holidays = holidays.KR()
-is_holiday = now.date() in ko_holidays
-weekday = now.weekday()
+# ✅ 요일 표시
+today_type = get_today_type()
+today_text = {
+    "weekday": "📅 오늘은 평일입니다",
+    "saturday": "📅 오늘은 토요일입니다",
+    "holiday": "📅 오늘은 일요일/공휴일입니다"
+}
+st.markdown(f"### {today_text[today_type]}")
 
-if is_holiday or weekday == 6:
-    schedule_file = "downloads/holiday.json"
-    label = "📅 오늘은 일요일/공휴일입니다"
-elif weekday == 5:
-    schedule_file = "downloads/saturday.json"
-    label = "📅 오늘은 토요일입니다"
-else:
-    schedule_file = "downloads/weekday.json"
-    label = "📅 오늘은 평일입니다"
+# ✅ 현재 시간 표시
+with st.container():
+    current_time_placeholder = st.empty()
 
-st.title("🚌 실시간 버스 기점 출발 안내")
-st.markdown(f"**{label}**")
-st.markdown("---")
+# ✅ JSON 경로 지정
+json_path = {
+    "weekday": "downloads/weekday.json",
+    "saturday": "downloads/saturday.json",
+    "holiday": "downloads/holiday.json"
+}
+with open(json_path[today_type], "r", encoding="utf-8") as f:
+    bus_data = json.load(f)
 
-# ✅ 현재 시각 표시
-st.markdown(f"🧑‍💻 **현재 시각:**  `{now.strftime('%H:%M:%S')}`")
-
-# ✅ JSON 로드 함수
-@st.cache_data
-def load_schedule(path):
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-schedule_data = load_schedule(schedule_file)
-
-# ✅ 사용자 지정 정렬 기준 (M → G → 6 → 기타)
+# ✅ 사용자 지정 정렬 (M → G → 숫자)
 def custom_sort_key(route):
     if route.startswith("M"):
         return (0, route)
     elif route.startswith("G"):
         return (1, route)
-    elif route.startswith("6"):
+    elif route[0].isdigit():
         return (2, route)
-    else:
-        return (3, route)
+    return (3, route)
 
-routes = sorted(schedule_data.keys(), key=custom_sort_key)
+routes = sorted(bus_data.keys(), key=custom_sort_key)
 selected_route = st.selectbox("노선을 선택하세요:", routes)
 
-if selected_route:
-    st.markdown(f"## 🕰️ **{selected_route}번 버스 남은 시간**")
-    now = datetime.now(KST)
-
-    times = schedule_data[selected_route]
+# ✅ 실시간 남은 시간 계산 함수
+def get_remaining_times(times):
+    now = datetime.now()
     upcoming = []
-    for t in times:
+    for t_str in times:
         try:
-            bus_time = datetime.strptime(t, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day, tzinfo=KST
+            t = datetime.strptime(t_str, "%H:%M").replace(
+                year=now.year, month=now.month, day=now.day
             )
-            if bus_time < now:
-                continue  # 지난 시간은 제외
+            if t < now:
+                continue  # 이미 지난 시간은 제외
+            delta = t - now
+            upcoming.append((t_str, delta))
+        except:
+            continue
+    return upcoming[:3]  # 상위 3개만
 
-            diff = bus_time - now
-            upcoming.append((t, diff))
-        except Exception as e:
-            st.error(f"{t} 시간 오류: {e}")
+# ✅ 출력 루프 (틱톡)
+if selected_route:
+    st.markdown(f"### 🕰️ {selected_route}번 버스 남은 시간")
+    slot = st.empty()
 
-    upcoming = sorted(upcoming, key=lambda x: x[1])[:3]  # 상위 3개만 출력
+    while True:
+        now = datetime.now().strftime("%H:%M:%S")
+        current_time_placeholder.markdown(f"#### 🧑‍💻 현재 시각: <span style='color:green'>{now}</span>", unsafe_allow_html=True)
 
-    for t, diff in upcoming:
-        total_seconds = int(diff.total_seconds())
-        minutes = total_seconds // 60
-        seconds = total_seconds % 60
-
-        if minutes >= 60:
-            hours = minutes // 60
-            mins = minutes % 60
-            formatted = f"{hours}시간 {mins}분 {seconds}초"
-        else:
-            formatted = f"{minutes}분 {seconds}초"
-
-        icon = "⏰" if minutes <= 10 else "⏳"
-        st.markdown(f"- 🕒 **{t}** → {icon} **{formatted} 남음**")
+        upcoming = get_remaining_times(bus_data[selected_route])
+        with slot.container():
+            for time_str, diff in upcoming:
+                seconds = diff.seconds
+                if seconds >= 3600:
+                    h = seconds // 3600
+                    m = (seconds % 3600) // 60
+                    s = seconds % 60
+                    remaining = f"{h}시간 {m}분 {s}초 남음"
+                else:
+                    m = seconds // 60
+                    s = seconds % 60
+                    remaining = f"{m}분 {s}초 남음"
+                icon = "⏳" if seconds > 600 else "⏰"
+                st.markdown(f"- 🕒 **{time_str}** → {icon} **{remaining}**")
+        time.sleep(1)
