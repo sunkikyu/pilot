@@ -1,39 +1,48 @@
 import streamlit as st
-from streamlit_autorefresh import st_autorefresh
 import json
 from datetime import datetime, timedelta
-import os
+import pytz
+from streamlit_autorefresh import st_autorefresh
+import holidays
 
+# ⏱ 자동 새로고침 (60초 간격)
+st_autorefresh(interval=60 * 1000, key="refresh")
+
+# 🛠 한국 시간 기준
+KST = pytz.timezone("Asia/Seoul")
+now = datetime.now(KST)
+
+# 📅 오늘 날짜 기준 요일 및 공휴일 판단
+kr_holidays = holidays.KR()
+if now.date() in kr_holidays or now.weekday() == 6:
+    day_type = "holiday"
+    label = "일요일/공휴일"
+elif now.weekday() == 5:
+    day_type = "saturday"
+    label = "토요일"
+else:
+    day_type = "weekday"
+    label = "평일"
+
+# 🧾 페이지 설정
 st.set_page_config(page_title="버스 실시간 안내", layout="centered")
 
-# 🚩 오토 리프레시 (매 10초)
-st_autorefresh(interval=10 * 1000, key="auto_refresh")
-
-# 🚩 오늘 요일 판단
-today = datetime.now()
-weekday = today.weekday()
-if weekday == 5:
-    schedule_file = "downloads/saturday.json"
-    today_label = "📅 오늘은 토요일입니다"
-elif weekday == 6:
-    schedule_file = "downloads/holiday.json"
-    today_label = "📅 오늘은 일요일입니다"
-else:
-    schedule_file = "downloads/weekday.json"
-    today_label = "📅 오늘은 평일입니다"
-
 st.markdown("## 🚌 실시간 버스 기점 출발 안내")
-st.markdown(today_label)
+st.markdown(f"🗓️ 오늘은 **{label}**입니다")
 
-# 🚩 버스 스케줄 JSON 파일 로드
-@st.cache_data
-def load_schedule(path):
-    with open(path, "r", encoding="utf-8") as f:
+# 📂 요일별 JSON 로딩
+def load_schedule(filename):
+    with open(filename, "r", encoding="utf-8") as f:
         return json.load(f)
 
-bus_data = load_schedule(schedule_file)
+filename_map = {
+    "weekday": "downloads/weekday.json",
+    "saturday": "downloads/saturday.json",
+    "holiday": "downloads/holiday.json"
+}
+bus_data = load_schedule(filename_map[day_type])
 
-# 🚩 사용자 지정 정렬
+# 🧩 노선 정렬 함수
 def custom_sort_key(route):
     if route.startswith("M"):
         return (0, route)
@@ -44,39 +53,40 @@ def custom_sort_key(route):
     else:
         return (3, route)
 
+# 🚏 노선 선택
 routes = sorted(bus_data.keys(), key=custom_sort_key)
-selected_route = st.selectbox("", routes)
+selected_route = st.selectbox("노선을 선택하세요:", routes)
 
-# 🚩 현재 시간 기준 정렬 및 필터링
+# 🕓 현재 시간
+st.markdown(f"🔑 현재 시간: `{now.strftime('%H:%M:%S')}`")
+
+# 🚌 남은 시간 계산 및 출력
 if selected_route:
-    times = bus_data[selected_route]
-    now = datetime.now().replace(microsecond=0)
-
     result = []
-    for time_str in times:
+    for time_str in bus_data[selected_route]:
         try:
             bus_time = datetime.strptime(time_str, "%H:%M").replace(
-                year=now.year, month=now.month, day=now.day
+                year=now.year, month=now.month, day=now.day, tzinfo=KST
             )
             if bus_time < now:
-                continue  # 지난 버스는 무시
+                continue  # 지난 시간은 제외
             diff = bus_time - now
             result.append((time_str, diff))
         except Exception as e:
             st.error(f"시간 파싱 오류: {time_str} | {e}")
 
     result.sort(key=lambda x: x[1])
-    result = result[:3]  # 상위 3개만 표시
 
-    for time_str, diff in result:
-        total_minutes = diff.total_seconds() // 60
-        minutes = int(diff.total_seconds() // 60)
-        seconds = int(diff.total_seconds() % 60)
-        icon = "⏳" if minutes > 10 else "⏰"
-
-        if minutes >= 60:
-            hours = minutes // 60
-            mins = minutes % 60
-            st.markdown(f"- 🕒 **{time_str}** → {icon} **{int(hours)}시간 {int(mins)}분 {seconds}초 남음**")
+    # 🔔 최대 3개까지만 출력
+    for time_str, diff in result[:3]:
+        minutes = diff.seconds // 60
+        seconds = diff.seconds % 60
+        if diff.seconds >= 3600:
+            hours = diff.seconds // 3600
+            minutes = (diff.seconds % 3600) // 60
+            formatted = f"{hours}시간 {minutes}분 {seconds}초 남음"
         else:
-            st.markdown(f"- 🕒 **{time_str}** → {icon} **{minutes}분 {seconds}초 남음**")
+            formatted = f"{minutes}분 {seconds}초 남음"
+
+        icon = "⏰" if diff.seconds <= 600 else "⏳"
+        st.markdown(f"- 🕒 **{time_str}** → {icon} **{formatted}**")
